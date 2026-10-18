@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#10151d">
+<title>DRY DRILL — Timer & son</title>
+<style>
+:root{color-scheme:dark;--bg:#10151d;--panel:#1b2430;--muted:#9ba9ba;--line:#303d4c;--accent:#70d6a6;--warn:#ffcc66}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f3f6fa;font:16px system-ui,-apple-system,Segoe UI,sans-serif}
+header{padding:18px 16px 12px;background:#141c26;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
+h1{font-size:21px;margin:0}header p{margin:4px 0 0;color:var(--muted);font-size:12px}
+.tabs{display:flex;gap:8px;padding:12px;overflow:auto;max-width:720px;margin:auto}
+.tab,button,input{font:inherit}.tab,button{border:1px solid var(--line);background:var(--panel);color:#f3f6fa;border-radius:12px;padding:10px 13px}
+.tab.active,button.primary{background:var(--accent);color:#102019;border-color:var(--accent);font-weight:700}
+.wrap{padding:0 12px 28px;max-width:720px;margin:auto}.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:15px;margin-bottom:12px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.row>*{flex:1;min-width:0}
+.muted{color:var(--muted);font-size:13px}.big{font-size:clamp(36px,10vw,48px);font-variant-numeric:tabular-nums;font-weight:750;letter-spacing:1px}
+.label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+button{cursor:pointer}button:disabled{opacity:.4}input{width:100%;background:#101720;border:1px solid var(--line);border-radius:10px;color:white;padding:10px;margin-top:5px}
+.hidden{display:none!important}.notice{border-left:3px solid var(--warn);padding:10px 11px;background:#2b281f;border-radius:8px;color:#f4e5bd;font-size:12px;line-height:1.45}
+.meter{height:14px;border-radius:999px;background:#0a1116;border:1px solid var(--line);overflow:hidden;margin:12px 0}
+#bar{height:100%;width:0%;background:var(--accent);transition:width .06s linear}
+.statusline{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:13px}
+input[type=range]{padding:0;accent-color:var(--accent)}
+.historyItem{padding:10px 0;border-bottom:1px solid var(--line)}.historyItem:last-child{border:0}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 9px;color:var(--muted);font-size:12px}
+.footer{text-align:center;color:var(--muted);font-size:11px;padding:10px}.good{color:var(--accent)}.bad{color:var(--warn)}
+</style></head>
+<body>
+<header><h1>DRY DRILL <span style="color:var(--accent)">/ TIMER</span></h1><p>Chronomètre • moniteur audio • historique local</p></header>
+<nav class="tabs">
+<button class="tab active" data-page="timerPage">Timer</button>
+<button class="tab" data-page="audioPage">Audio</button>
+<button class="tab" data-page="historyPage">Historique</button>
+</nav>
+<main class="wrap">
+<section id="timerPage" class="page">
+ <div class="panel">
+  <div class="label">Temps écoulé</div><div id="clock" class="big">00:00.00</div>
+  <div class="row">
+   <div><div class="label">Événements audio</div><strong id="eventCount">0</strong></div>
+   <div><div class="label">Dernier événement</div><strong id="lastEvent">—</strong></div>
+   <div><div class="label">État</div><strong id="status">Prêt</strong></div>
+  </div>
+ </div>
+ <div class="panel">
+  <div class="row">
+   <label>Délai de départ min. (s)<input id="delayMin" type="number" min="0" max="10" step="0.1" value="2"></label>
+   <label>Délai max. (s)<input id="delayMax" type="number" min="0" max="15" step="0.1" value="4"></label>
+  </div>
+  <div class="row" style="margin-top:10px">
+   <label>Temps PAR (s, 0 = désactivé)<input id="parTime" type="number" min="0" max="120" step="0.1" value="0"></label>
+   <label>Mode de départ
+    <select id="startMode" style="width:100%;background:#101720;border:1px solid var(--line);border-radius:10px;color:white;padding:10px;margin-top:5px">
+     <option value="random">Aléatoire</option><option value="instant">Immédiat</option>
+    </select>
+   </label>
+  </div>
+  <div class="controls">
+   <button id="startBtn" class="primary">▶ Démarrer</button><button id="stopBtn" disabled>■ Terminer</button>
+   <button id="resetBtn">Réinitialiser</button><button id="audioTabBtn">Réglages audio →</button>
+  </div>
+  <p class="muted">Chaque pic sonore détecté pendant la session affiche le temps total depuis le bip de départ et le split depuis le pic précédent. Les événements sont horodatés par le navigateur.</p>
+ </div>
+ <div class="notice">Sécurité : utilise uniquement un environnement d’entraînement à sec conforme à tes procédures. Vérifie séparément que l’arme est déchargée et que toutes les munitions sont éloignées.</div>
+</section>
+
+<section id="audioPage" class="page hidden">
+ <div class="panel">
+  <div class="row" style="align-items:flex-start">
+   <div><div class="label">Moniteur audio</div><div id="micStatus" class="big" style="font-size:23px">Micro désactivé</div><div id="secureStatus" class="muted">Vérification du navigateur…</div></div>
+   <button id="micButton" class="primary">Activer le micro</button>
+  </div>
+  <div class="meter"><div id="bar"></div></div>
+  <div class="statusline"><span>Niveau sonore</span><strong id="level">0%</strong></div>
+  <label for="sensitivity" class="muted">Seuil : <strong id="thresholdLabel">35%</strong></label>
+  <input id="sensitivity" type="range" min="5" max="95" value="35">
+  <label for="cooldown" class="muted">Intervalle minimal entre événements (ms)</label>
+  <input id="cooldown" type="number" min="150" max="5000" step="50" value="500">
+  <div class="controls"><button id="testSound" class="secondary">Tester le niveau</button><button id="clearEvents" class="secondary">Effacer l’historique</button></div>
+  <p id="notice" class="notice" style="margin-top:12px">Autorise le micro lorsque le navigateur le demande.</p>
+ </div>
+ <div class="panel">
+  <div class="label">Si l’autorisation ne s’affiche pas</div>
+  <p class="muted">Le fichier HTML ouvert directement depuis Téléchargements (adresse commençant par <b>file://</b>) peut être bloqué par Android/Chrome. Dans ce cas, ce n’est pas un réglage de sensibilité : il faut ouvrir la page depuis une adresse HTTPS sécurisée, puis autoriser le micro dans les permissions du site.</p>
+  <ol class="muted" style="padding-left:20px;line-height:1.6">
+   <li>Ouvre la page dans Chrome, pas dans l’aperçu du gestionnaire de fichiers.</li>
+   <li>Si Chrome affiche une erreur de contexte sécurisé, héberge la page sur un site HTTPS de confiance.</li>
+   <li>Dans Chrome : menu ⋮ → Paramètres → Paramètres des sites → Microphone, puis autorise le site concerné.</li>
+   <li>Recharge la page et appuie de nouveau sur « Activer le micro ».</li>
+  </ol>
+  <p class="muted">Le navigateur peut afficher une permission système Android supplémentaire. Ne choisis pas « Bloquer » si tu souhaites utiliser le moniteur.</p>
+ </div>
+</section>
+
+<section id="historyPage" class="page hidden">
+ <div class="panel">
+  <div class="row"><div><div class="label">Historique local</div><p class="muted">Enregistré sur ce navigateur, sur ce téléphone.</p></div><button id="exportBtn">Exporter JSON</button></div>
+  <div class="row"><div><div class="label">Événements enregistrés</div><div class="big" id="historyCount">0</div></div><button id="clearHistoryBtn" class="secondary">Effacer tout</button></div>
+  <div id="historyList" class="muted">Aucun événement enregistré.</div>
+ </div>
+</section>
+<div class="footer">Prototype local · pas de données envoyées en ligne</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let running=false,waiting=false,startedAt=0,elapsed=0,raf=null,startTimeout=null,parTimeout=null;
+let audioContext=null,analyser=null,stream=null,source=null,audioFrame=null,lastEventAt=0,above=false;
+let events=[]; let runStartPerf=null; let lastShotElapsed=null;
+function fmt(ms){let s=ms/1000;return String(Math.floor(s/60)).padStart(2,'0')+':'+(s%60).toFixed(2).padStart(5,'0')}
+function beep(freq=880,duration=.16){try{const c=audioContext||new(window.AudioContext||window.webkitAudioContext)();const o=c.createOscillator(),g=c.createGain();o.frequency.value=freq;o.connect(g);g.connect(c.destination);g.gain.value=.1;o.start();o.stop(c.currentTime+duration)}catch(e){}}
+function tick(){if(running){$('clock').textContent=fmt(elapsed+performance.now()-startedAt);raf=requestAnimationFrame(tick)}}
+function start(){if(running||waiting)return;events=[];renderHistory();$('eventCount').textContent='0';$('lastEvent').textContent='—';elapsed=0;$('clock').textContent='00:00.00';runStartPerf=null;lastShotElapsed=null;waiting=true;$('startBtn').disabled=true;$('stopBtn').disabled=false;$('status').textContent='Attente';let mn=Math.max(0,Number($('delayMin').value)||0),mx=Math.max(mn,Number($('delayMax').value)||mn);let delay=$('startMode').value==='instant'?0:(mn+Math.random()*(mx-mn))*1000;
+const fire=()=>{waiting=false;running=true;startedAt=performance.now();runStartPerf=startedAt;$('status').textContent='En cours';beep(1000,.2);tick();let par=Math.max(0,Number($('parTime').value)||0);if(par>0)parTimeout=setTimeout(()=>{if(running){beep(440,.4);$('status').textContent='PAR atteint'}},par*1000)};
+if(delay===0)fire();else startTimeout=setTimeout(()=>{if(waiting)fire()},delay)}
+function stop(){waiting=false;running=false;clearTimeout(startTimeout);clearTimeout(parTimeout);cancelAnimationFrame(raf);elapsed=0;$('status').textContent='Terminé';$('startBtn').disabled=false;$('stopBtn').disabled=true}
+function logEvent(level){
+ const now=new Date();
+ const elapsedSec=(running && runStartPerf!==null)?(performance.now()-runStartPerf)/1000:null;
+ const splitSec=(elapsedSec!==null && lastShotElapsed!==null)?elapsedSec-lastShotElapsed:null;
+ const item={number:events.length+1,time:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),level,stamp:now.toISOString(),elapsed:elapsedSec,split:splitSec};
+ events.push(item);if(events.length>200)events.shift();
+ $('eventCount').textContent=events.length;
+ $('lastEvent').textContent=elapsedSec===null?'Hors session':elapsedSec.toFixed(2)+' s';
+ lastShotElapsed=elapsedSec;renderHistory();
+}
+function renderHistory(){
+ const ul=$('historyList');ul.replaceChildren();$('historyCount').textContent=events.length;
+ if(!events.length){ul.textContent='Aucun événement enregistré.';return}
+ events.forEach(e=>{
+  const d=document.createElement('div');d.className='historyItem';
+  const b=document.createElement('strong');
+  b.textContent=`#${String(e.number).padStart(2,'0')} · ${e.elapsed===null?'hors session':e.elapsed.toFixed(2)+' s'}`;
+  const p=document.createElement('div');p.className='muted';
+  p.textContent=`Split : ${e.split===null?'—':e.split.toFixed(2)+' s'} · Niveau sonore : ${e.level}% · ${e.time}`;
+  d.append(b,p);ul.append(d);
+ });
+}
+function setNotice(s){$('notice').textContent=s}
+function micLoop(){if(!analyser)return;const data=new Uint8Array(analyser.fftSize);const loop=()=>{if(!analyser)return;analyser.getByteTimeDomainData(data);let sum=0;for(let i=0;i<data.length;i++){const v=(data[i]-128)/128;sum+=v*v}const rms=Math.sqrt(sum/data.length);const pct=Math.min(100,Math.round(rms*260));$('bar').style.width=pct+'%';$('level').textContent=pct+'%';const threshold=Number($('sensitivity').value),now=performance.now(),cooldown=Math.max(150,Math.min(5000,Number($('cooldown').value)||500));if(pct>=threshold&&!above&&now-lastEventAt>=cooldown){lastEventAt=now;logEvent(pct)}above=pct>=threshold;audioFrame=requestAnimationFrame(loop)};loop()}
+async function toggleMic(){if(stream){disableMic();return}
+if(!window.isSecureContext){setNotice('Le micro est bloqué car cette page n’est pas ouverte dans un contexte sécurisé. Ouvre-la depuis une adresse HTTPS dans Chrome.');return}
+if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){setNotice('Ce navigateur ne donne pas accès au micro dans ce contexte. Ouvre la page dans Chrome à une adresse HTTPS.');return}
+try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});const AC=window.AudioContext||window.webkitAudioContext;audioContext=new AC();await audioContext.resume();analyser=audioContext.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=.1;source=audioContext.createMediaStreamSource(stream);source.connect(analyser);$('micStatus').textContent='Micro actif';$('micStatus').className='big good';$('micButton').textContent='Désactiver le micro';$('secureStatus').textContent='Autorisation accordée';setNotice('Écoute active. Le niveau est mesuré localement.');micLoop()}catch(e){let msg='Impossible d’activer le micro.';if(e.name==='NotAllowedError')msg='Autorisation refusée. Vérifie les permissions du site dans Chrome et l’autorisation Microphone de l’application Chrome dans les paramètres Android.';else if(e.name==='NotFoundError')msg='Aucun microphone disponible détecté.';else if(e.name==='NotReadableError')msg='Le micro semble utilisé par une autre application. Ferme-la et réessaie.';setNotice(msg);$('micStatus').textContent='Micro indisponible';$('micStatus').className='big bad'}}
+function disableMic(){if(audioFrame)cancelAnimationFrame(audioFrame);if(stream)stream.getTracks().forEach(t=>t.stop());if(audioContext)audioContext.close();stream=null;audioContext=null;analyser=null;source=null;$('micStatus').textContent='Micro désactivé';$('micStatus').className='big';$('micButton').textContent='Activer le micro';$('bar').style.width='0%';$('level').textContent='0%'}
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.page').forEach(p=>p.classList.toggle('hidden',p.id!==b.dataset.page));if(b.dataset.page==='historyPage')renderHistory()});
+$('audioTabBtn').onclick=()=>document.querySelector('[data-page="audioPage"]').click();
+$('startBtn').onclick=start;$('stopBtn').onclick=stop;$('resetBtn').onclick=()=>{stop();elapsed=0;runStartPerf=null;lastShotElapsed=null;events=[];$('eventCount').textContent='0';$('lastEvent').textContent='—';renderHistory();$('clock').textContent='00:00.00';$('status').textContent='Prêt'};
+$('micButton').onclick=toggleMic;$('sensitivity').oninput=()=> $('thresholdLabel').textContent=$('sensitivity').value+'%';$('clearEvents').onclick=()=>{events=[];$('eventCount').textContent='0';$('lastEvent').textContent='—';renderHistory()};
+$('testSound').onclick=()=>setNotice('Fais un son ordinaire à proximité et observe la barre. Si aucun niveau ne bouge, vérifie l’autorisation du micro.');
+$('exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(events,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='chrono-son-historique.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+$('clearHistoryBtn').onclick=()=>{if(confirm('Effacer tous les événements ?')){events=[];$('eventCount').textContent='0';$('lastEvent').textContent='—';renderHistory()}};
+if(window.isSecureContext){$('secureStatus').textContent='Contexte sécurisé détecté';$('secureStatus').className='muted good'}else{$('secureStatus').textContent='Contexte non sécurisé : micro probablement bloqué';$('secureStatus').className='muted bad';setNotice('La page est ouverte en contexte non sécurisé. Le micro nécessite généralement HTTPS (ou localhost).')}
+renderHistory();
+window.addEventListener('pagehide',disableMic);
+</script>
+</body></html>
